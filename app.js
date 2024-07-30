@@ -1,9 +1,10 @@
-require("./blob-shim"); // Ensure this is the first require statement
+require("./blob-shim");
 require("dotenv").config();
 require("colors");
 
 const express = require("express");
 const ExpressWs = require("express-ws");
+const cors = require("cors");
 
 const { GptService } = require("./services/gpt-service");
 const { StreamService } = require("./services/stream-service");
@@ -12,11 +13,23 @@ const { TextToSpeechService } = require("./services/tts-service");
 const { recordingService } = require("./services/recording-service");
 
 const VoiceResponse = require("twilio").twiml.VoiceResponse;
+const twilio = require("twilio");
 
 const app = express();
 ExpressWs(app);
 
+app.use(express.json());
+
+const corsOptions = {
+        origin: "http://127.0.0.1:5173", // Updated origin
+        methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+        credentials: true,
+};
+
+app.use(cors(corsOptions));
+
 const PORT = process.env.PORT || 3000;
+const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 app.post("/incoming", (req, res) => {
         console.log("Incoming call");
@@ -31,6 +44,40 @@ app.post("/incoming", (req, res) => {
         } catch (err) {
                 console.log(err);
         }
+});
+
+app.post("/outbound", (req, res) => {
+        console.log("Outbound call request received");
+        try {
+                const { to, from, goal, n2k, end_condition } = req.body;
+
+                twilioClient.calls
+                        .create({
+                                url: `http://${process.env.SERVER}/outbound-call-response`,
+                                to: to,
+                                from: from,
+                        })
+                        .then((call) => {
+                                console.log(`Outbound call initiated: ${call.sid}`);
+                                res.status(200).send({ message: "Call initiated", callSid: call.sid });
+                        })
+                        .catch((err) => {
+                                console.error("Error initiating outbound call", err);
+                                res.status(500).send({ message: "Error initiating call", error: err });
+                        });
+        } catch (err) {
+                console.log(err);
+        }
+});
+
+app.post("/outbound-call-response", (req, res) => {
+        const response = new VoiceResponse();
+        const connect = response.connect();
+        connect.stream({ url: `wss://${process.env.SERVER}/connection` });
+        console.log(response.toString());
+
+        res.type("text/xml");
+        res.end(response.toString());
 });
 
 app.ws("/connection", (ws) => {
