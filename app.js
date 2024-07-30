@@ -29,7 +29,15 @@ const corsOptions = {
 app.use(cors(corsOptions));
 
 const PORT = process.env.PORT || 3000;
+
+// Verify environment variables
+console.log("Twilio Account SID: ", process.env.TWILIO_ACCOUNT_SID ? "Loaded" : "Not Loaded");
+console.log("Twilio Auth Token: ", process.env.TWILIO_AUTH_TOKEN ? "Loaded" : "Not Loaded");
+
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+
+// Store goals with call SIDs
+const callGoals = new Map();
 
 app.post("/incoming", (req, res) => {
         console.log("Incoming call");
@@ -59,6 +67,7 @@ app.post("/outbound", (req, res) => {
                         })
                         .then((call) => {
                                 console.log(`Outbound call initiated: ${call.sid}`);
+                                callGoals.set(call.sid, goal); // Store the goal with the call SID
                                 res.status(200).send({ message: "Call initiated", callSid: call.sid });
                         })
                         .catch((err) => {
@@ -80,7 +89,7 @@ app.post("/outbound-call-response", (req, res) => {
         res.end(response.toString());
 });
 
-app.ws("/connection", (ws) => {
+app.ws("/connection", (ws, req) => {
         try {
                 console.log("app.js -> Connection established".underline.blue);
                 ws.on("error", console.error);
@@ -104,9 +113,12 @@ app.ws("/connection", (ws) => {
                                 streamService.setStreamSid(streamSid);
                                 gptService.setCallSid(callSid);
 
+                                const goal = callGoals.get(callSid); // Retrieve the goal for this call
+                                gptService.setGoal(goal); // Set the goal in the GPT service
+
                                 recordingService(ttsService, callSid).then(() => {
                                         console.log(`Twilio -> Starting Media Stream for ${streamSid}`.underline.red);
-                                        ttsService.generate({ partialResponseIndex: null, partialResponse: "Hello! I understand you're looking for a pair of AirPods, is that correct?" }, 0);
+                                        ttsService.generate({ partialResponseIndex: null, partialResponse: `Hello! Can I ${goal}?` }, 0);
                                 });
                         } else if (msg.event === "media") {
                                 transcriptionService.send(msg.media.payload);
