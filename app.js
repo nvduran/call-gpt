@@ -45,7 +45,6 @@ app.post("/incoming", (req, res) => {
                 const response = new VoiceResponse();
                 const connect = response.connect();
                 connect.stream({ url: `wss://${process.env.SERVER}/connection` });
-                console.log(response.toString());
 
                 res.type("text/xml");
                 res.end(response.toString());
@@ -79,14 +78,18 @@ app.post("/outbound", (req, res) => {
         }
 });
 
-app.post("/outbound-call-response", (req, res) => {
-        const response = new VoiceResponse();
-        const connect = response.connect();
-        connect.stream({ url: `wss://${process.env.SERVER}/connection` });
-        console.log(response.toString());
+app.get("/outbound-call-response", (req, res) => {
+        try {
+                const response = new VoiceResponse();
+                const connect = response.connect();
+                connect.stream({ url: `wss://${process.env.SERVER}/connection` });
 
-        res.type("text/xml");
-        res.end(response.toString());
+                res.type("text/xml");
+                res.end(response.toString());
+        } catch (err) {
+                console.error("Error handling outbound call response:", err);
+                res.status(500).send("Error handling call response");
+        }
 });
 
 app.ws("/connection", (ws, req) => {
@@ -106,6 +109,7 @@ app.ws("/connection", (ws, req) => {
 
                 ws.on("message", function message(data) {
                         const msg = JSON.parse(data);
+
                         if (msg.event === "start") {
                                 streamSid = msg.start.streamSid;
                                 callSid = msg.start.callSid;
@@ -114,6 +118,7 @@ app.ws("/connection", (ws, req) => {
                                 gptService.setCallSid(callSid);
 
                                 const goal = callGoals.get(callSid); // Retrieve the goal for this call
+                                console.log("Call Goal:", goal);
                                 gptService.setGoal(goal); // Set the goal in the GPT service
 
                                 recordingService(ttsService, callSid).then(() => {
